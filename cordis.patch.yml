@@ -1,0 +1,4 @@
+# 鱼鱼窝 —— 把「大肥鱼的小日子」那个房间接进 DSH
+- insert:
+    - id: fish-home
+      name: 'dsh-fish-home'

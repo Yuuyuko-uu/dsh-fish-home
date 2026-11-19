@@ -68,6 +68,15 @@
 - **保险丝**：该醒没醒（跨夜、进程断过、插件重挂），插件会放行并把她叫起来，不会卡死在睡觉状态
 - 醒了会跟你打个招呼
 
+## 会话中的菜谱、天气和卡册
+
+- **菜谱**。fish_home_recipe 默认查今天的菜名。可按菜名或 ID 查询一道菜，打开「学菜」后才能读食材和步骤。
+- **天气**。fish_home 可查庭院当前天气（weather）或设置地区的三天预报（forecast）。在房间设置里开启当地天气同步后，庭院跟随该地区。手动点晴日、听雨或落雪会切回手动天气，仍能单独查当地预报。
+- **卡册**。fish_home_card 按卡名或 ID 一次看一张图，抽卡和兑换只返回文字。fish_home_draw 加上 op=exchange 可换金币、星辉或指定卡。金币兑换数量填消耗的星尘，星辉兑换数量填要得到的星辉。
+
+- **田地布局**。fish_home_farm 的 list 使用 scope=layout 查看菜畦按 3×3 分组的作物。加 bed=0、1 或 2 可看该菜畦每个格子。
+- **集市**。商店里的「集市行情」和 fish_home 的 market、price 共用售价。每天北京时间零点更新，明日预告也可提前查询。price 可按 kind 或 item 筛选。
+
 ## 画架
 
 - **`paint` 工具**：她在会话里说想画什么、调一下，房间的画架上就出来一张
@@ -95,11 +104,33 @@ DSH 设置里有一项「**鱼鱼窝**」：
 
 ## 装
 
+**① 装插件**
+
 ```
 dsh plugin --profile <你的 profile> add dsh-fish-home
 ```
 
-或者插件市场里搜「鱼鱼窝」。装完重启一次 DSH。
+或者插件市场里搜「鱼鱼窝」。
+
+**② 下房间本体（那个 3D 屋子）**
+
+插件本体只有几十 K。房间是**另一份程序**，三百多兆（3D 模型 + 卡牌素材），npm 装不下，所以单独下载：
+
+去 [Releases](https://github.com/Yuuyuko-uu/dsh-fish-home/releases) 下 `鱼鱼窝-<版本>.zip`，解压到：
+
+```
+~/.dsh/fish-home-room/
+```
+
+Windows 就是 `C:\Users\<你>\.dsh\fish-home-room\`，打开里面要能直接看到 `app-server.js`（别再套一层文件夹）。
+
+想放别处，设环境变量 `FISH_ROOM_DIR` 指向那个目录。
+
+**③ 重启一次 DSH**
+
+重启完绑定会话，再从侧栏打开。电脑上需要 Node.js 22.13 或更新版本。房间默认在本机 `5178` 端口，首次启动时在 `~/.dsh/fish-home-data` 建立空存档，插件更新时会继续用这份。
+
+内置房间使用原版蓝色大肥鱼模型和配套动作。模型制作：水原镜，MMD 转换与绑定：耶栗Yaki。模型的署名和原始使用规约随房间本体一起下发（房间目录 `models/dayu-mmd/` 里的 `MODEL-CREDITS.md` 和 `使用规约.txt`），请一并保留。
 
 ## 配置
 
@@ -124,7 +155,7 @@ dsh plugin --profile <你的 profile> add dsh-fish-home
 
 ## 房间那边怎么接
 
-房间读 `data/dsh-bridge.json`：
+内置房间会自动读取 DSH 写出的发现文件。已有独立的鱼鱼窝时，可以在 DSH 的启动环境中用 `FISH_ROOM_DIR` 指定房间目录，并用 `FISH_ROOM_PORT` 指定端口。旧房间继续读取它自己的存档配置 `data/dsh-bridge.json`。
 
 ```json
 { "enabled": true, "discover": true }

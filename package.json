@@ -1,10 +1,10 @@
 {
   "name": "dsh-fish-home",
-  "version": "0.0.4",
+  "version": "0.1.0",
   "description": "鱼鱼窝：把「大肥鱼的小日子」那个 3D 房间接进 DSH —— 房间里打字能送到会话里，会话里回的话、她自己打的字，都顺着事件流回到房间里。",
   "license": "SEE LICENSE IN LICENSE",
   "engines": {
-    "node": ">=22",
+    "node": ">=22.13.0",
     "dsh": ">=0.2.1-rc.2"
   },
   "type": "module",

@@ -16,6 +16,8 @@
   },
   "files": [
     "lib",
+    "docs",
+    "screenshots.json",
     "cordis.patch.yml",
     "README.md",
     "CHANGELOG.md",

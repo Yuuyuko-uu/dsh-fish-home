@@ -119,7 +119,7 @@ dsh plugin --profile <你的 profile> add dsh-fish-home
 
 插件本体只有几十 K。房间是**另一份程序**，三百多兆（3D 模型 + 卡牌素材），npm 装不下，所以单独下载：
 
-去 [Releases](https://github.com/Yuuyuko-uu/dsh-fish-home/releases) 下 `鱼鱼窝-<版本>.zip`，解压到：
+去 [Releases](https://github.com/Yuuyuko-uu/dsh-fish-home/releases) 下 `fish-home-room-<版本>.zip`，解压到：
 
 ```
 ~/.dsh/fish-home-room/

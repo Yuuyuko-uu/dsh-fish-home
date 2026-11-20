@@ -78,6 +78,7 @@
 - **卡册**。fish_home_card 按卡名或 ID 一次看一张图，抽卡和兑换只返回文字。fish_home_draw 加上 op=exchange 可换金币、星辉或指定卡。金币兑换数量填消耗的星尘，星辉兑换数量填要得到的星辉。
 
 - **田地布局**。fish_home_farm 的 list 使用 scope=layout 查看菜畦按 3×3 分组的作物。加 bed=0、1 或 2 可看该菜畦每个格子。
+- **批量收种**。一次说清作物，用 `op=replant,item=...` 会批量收成熟的同类作物并用背包种子补种；明确允许花金币时再加 `buyMissing=true`，整套流程只需一次工具调用。
 - **集市**。商店里的「集市行情」和 fish_home 的 market、price 共用售价。每天北京时间零点更新，明日预告也可提前查询。price 可按 kind 或 item 筛选。
 
 ## 画架
@@ -127,13 +128,17 @@ dsh plugin --profile <你的 profile> add dsh-fish-home
 
 Windows 就是 `C:\Users\<你>\.dsh\fish-home-room\`，打开里面要能直接看到 `app-server.js`（别再套一层文件夹）。
 
+已有鱼鱼窝要更新时，先用房间右上角的退出按钮关闭后台，再双击**旧房间目录**里的 `update-fish-home.cmd`，按提示输入新版 ZIP 的路径。从 0.1.0 升级时，旧目录没有更新脚本：先把新版 ZIP 解压到临时文件夹，只将其中的 `update-fish-home.cmd` 和 `update-fish-home.ps1` 复制到旧房间目录，再运行。脚本会将旧版运行文件保留在旁边的 `fish-home-room-backups`，原地替换程序资源；`%USERPROFILE%\.dsh\fish-home-data`、旧目录里的 `data` 和自定义配置都保持原样。文件替换失败会尝试恢复旧版。成功后从 DSH 重新打开鱼鱼窝即可。
+
 想放别处，设环境变量 `FISH_ROOM_DIR` 指向那个目录。
 
 **③ 重启一次 DSH**
 
 重启完绑定会话，再从侧栏打开。电脑上需要 Node.js 22.13 或更新版本。房间默认在本机 `5178` 端口，首次启动时在 `~/.dsh/fish-home-data` 建立空存档，插件更新时会继续用这份。
 
-内置房间使用原版蓝色大肥鱼模型和配套动作。模型制作：水原镜，MMD 转换与绑定：耶栗Yaki。模型的署名和原始使用规约随房间本体一起下发（房间目录 `dist/models/dayu-mmd/` 里的 `使用规约.txt`，以及房间根下的 `MODEL-CREDITS.md`），请一并保留。
+内置房间使用原版蓝色大肥鱼模型和配套动作。
+
+回忆簿可在 DSH 设置里的「上下文与回忆」填写纯文本记忆路径、日记路径和相伴起始日；逐轮 runtime-context 默认关闭，需要时可按需查询现场，天气、成熟与生活里程碑、消费和场景事件也能分别控制是否通知绑定会话。模型制作：水原镜，MMD 转换与绑定：耶栗Yaki。模型的署名和原始使用规约随房间本体一起下发（房间目录 `dist/models/dayu-mmd/` 里的 `使用规约.txt` 和 `MODEL-CREDITS.md`），请一并保留。
 
 卡包大部分立绘来源于 B站 UP 主 **ZipZipPipe**，版权归原作者，随游戏一起分发、未作修改。
 

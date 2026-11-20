@@ -4,7 +4,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { 读星汐, 读鱼的记忆, 收日记, 收记忆卡, 收回忆, 筛回忆 } from '../lib/回忆.mjs'
+import { 读星汐, 读鱼的记忆, 收日记, 收记忆卡, 收回忆, 筛回忆 } from '../lib/memory.mjs'
 
 let 挂 = 0
 const 报 = (标, 过, 细) => {

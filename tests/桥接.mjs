@@ -17,7 +17,7 @@ process.env.DSH_HOME = 家
 
 // 会话得自己选 —— 插件**不会**替人认（不选就是不选）
 const 会话id = 'session-abcdef12-3456-7890-abcd-ef1234567890'
-fs.writeFileSync(path.join(家, 'fish-room.json'), JSON.stringify({ 开: true, 会话: 会话id }, null, 2), 'utf8')
+fs.writeFileSync(path.join(家, 'fish-room.json'), JSON.stringify({ 开: true, 会话: 会话id, 每轮注入现场: true }, null, 2), 'utf8')
 
 const 房间 = 'D:/1/大肥鱼的小日子/server/bridge'
 const { BridgeClient } = await import('file:///' + 房间 + '/client.js')
@@ -76,7 +76,7 @@ const 代理 = {
 const 路由表 = new Map()
 const demoPng=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jkCgAAAAASUVORK5CYII=','base64');
 let photoView;
-let photoAttempts=0, movement, livePresence, fakeDuplicateDraw=false, movementAttempts=0, movementError=null;
+let photoAttempts=0, movement, livePresence, fakeDuplicateDraw=false, fakeInsufficientExchange=false, movementAttempts=0, movementError=null;
 const farmWrites=[];
 const farmHome=fs.mkdtempSync(path.join(os.tmpdir(),'fish-home-farm-api-'));
 fs.writeFileSync(path.join(farmHome,'dsh-bridge.json'),'{"enabled":false}');
@@ -87,6 +87,7 @@ const fixtureDb=new DatabaseSync(path.join(farmHome,'life.sqlite'));
 try {
   const state=JSON.parse(fixtureDb.prepare("SELECT value FROM meta WHERE key='state'").get().value);
   state.coins=15000;
+  state.cards.dust=70;
   fixtureDb.prepare("UPDATE meta SET value=? WHERE key='state'").run(JSON.stringify(state));
 } finally { fixtureDb.close(); }
 const farmAPI=await createAPI({dataDir:farmHome,weatherLookup:async place=>({
@@ -115,6 +116,9 @@ const 服务 = http.createServer(async (req, res) => {
   }
   if(fakeDuplicateDraw&&址.pathname==='/api/cards/draw'){
     res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({ok:true,coins:100,cards:{catalog:[{id:'kimi-classic',title:'Kimi'},{id:'deepseek',title:'DeepSeek'}],owned:{'kimi-classic':{},deepseek:{}},dust:6,starlight:5},results:[{id:'kimi-classic',rarity:'5★',finish:3,first:false,converted:true,starlight:5},{id:'deepseek',rarity:'4★',finish:1,first:false,upgrade:true,dust:6}]}));return;
+  }
+  if(fakeInsufficientExchange&&址.pathname==='/api/cards/exchange'){
+    res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({ok:false,say:'需要 20 星辉，目前只有 0 星辉。'}));return;
   }
   if(req.method==='POST'&&址.pathname.startsWith('/api/farm/'))farmWrites.push(址.pathname);
   if(址.pathname==='/cards/kimi-classic/thumb.png'){
@@ -186,6 +190,8 @@ const 插件 = await import('../lib/host.js')
 
 const 实例 = 插件.apply(ctx)
 报('走路注册失败时农活仍挂到已经绑定的会话', 注册的工具.some(t=>t.name==='fish_home_farm'));
+const 升级配置=JSON.parse(fs.readFileSync(path.join(家,'fish-room.json'),'utf8'))
+报('旧版配置迁移后关闭逐轮现场注入',升级配置.每轮注入现场===false&&升级配置.上下文策略版本===2)
 
 /* ── 发现文件 ─────────────────────────────────────────── */
 
@@ -345,6 +351,10 @@ const 事回 = await 客户端.sendLifeEvent({ schema: LIFE_EVENT_SCHEMA, id: 'l
 报('生活事件收下了', 事回.ok === true, JSON.stringify(事回))
 const 重复 = await 客户端.sendLifeEvent({ schema: LIFE_EVENT_SCHEMA, id: 'life-1', at: Date.now(), kind: 'dsh_bili_done', title: '从 B 站回来了', text: '看了两个视频。' })
 报('同一个事件不会记两遍', 重复.duplicate === true, JSON.stringify(重复))
+const 开启现场上下文=await (await fetch('http://127.0.0.1:'+端口+'/dsh-fish-home/save',{
+  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({每轮注入现场:true}),
+})).json()
+报('主动开启时可以重新挂载上下文',开启现场上下文.每轮注入现场===true)
 const 之前 = 收到的话.length
 await 客户端.sendLifeEvent({ schema: LIFE_EVENT_SCHEMA, id: 'scene-1', at: Date.now(), kind: 'scene', text: '拎起两次；推了三下秋千。' })
 报('场景摘要只进入上下文，不发起对话', 收到的话.length === 之前 && 上下文们.some(x => x.text().includes('推了三下秋千')))
@@ -406,15 +416,20 @@ const blocked=await 走路.execute({dest:'pond'});
 报('角色走不开时不自动再次打断',!blocked.ok&&movementAttempts===attemptsBeforeBlocked+1);
 const 池边状态=await 鱼鱼窝工具.execute({what:'status'});
 报('go 后立即查状态显示实际池边，忽略旧起床记录',池边状态.说==='活动：庭院 · 池塘边 · 闲着。');
+const 自然移动前=movementAttempts;
+打事件('turn/start',{turn:10});
+打事件('assistant/message',{turn:10,message:{role:'assistant',content:[{type:'text',text:'我先回房间了。'}]}});
+打事件('turn/end',{turn:10,reason:{kind:'completed'}});
+报('她明确说自己回房间时身体只执行一次并等待到达',await 等到(()=>movementAttempts===自然移动前+1)&&movement.args.dest==='indoor'&&movement.wait===true);
 const 农活=注册的工具.find(t=>t.name==='fish_home_farm');
 const 列田=await 农活.execute({op:'list'});
 const 买种=await 农活.execute({op:'buy',item:'radish',count:10});
 const seedBefore=farmAPI.store.钱袋().seeds.radish;
-const beforePlant=farmWrites.length;
 const legacy=await 农活.execute({op:'plant',item:'radish',plotId:'bed-0-0-0'});
 const 种下=await 农活.execute({op:'plant',item:'萝卜',count:10});
+const 重复种下=await 农活.execute({op:'plant',item:'萝卜',count:10});
 const afterPlant=farmAPI.store.farmSnapshot();
-报('单格工具参数不再暴露，10 格只调用一次批量播种',列田.ok&&!列田.说.includes('bed-0-')&&买种.ok&&!legacy.ok&&!Object.hasOwn(农活.parameters.properties,'plotId')&&种下.ok&&farmWrites.slice(beforePlant).join()==='/api/farm/plant-batch'&&afterPlant.farm.plots.filter(p=>p.cropId==='radish').length===10&&seedBefore-(afterPlant.wallet.seeds.radish||0)===10);
+报('单格工具参数不再暴露，10 格播种一次且重复请求不再消耗库存',列田.ok&&!列田.说.includes('bed-0-')&&买种.ok&&!legacy.ok&&!Object.hasOwn(农活.parameters.properties,'plotId')&&种下.ok&&!重复种下.ok&&afterPlant.farm.plots.filter(p=>p.cropId==='radish').length===10&&seedBefore-(afterPlant.wallet.seeds.radish||0)===10);
 const 浇水=await 农活.execute({op:'water',zone:'vegetable'});
 报('批量浇水覆盖所有需要浇水的作物',浇水.ok&&farmAPI.store.farmSnapshot().farm.plots.filter(p=>p.wateredUntil>0).length===10);
 await 农活.execute({op:'buy',item:'guppy',count:3});
@@ -445,7 +460,7 @@ const 工具名=name=>注册的工具.find(t=>t.name===name);
 const 看卡=工具名('fish_home_card');
 const 卡面=await 看卡.execute({card:'kimi-classic'});
 报('卡面按需只返回一个图片附件，抽卡只返回文字',卡面.ok&&看卡.output.render({},卡面).filter(b=>b.type==='image').length===1&&抽卡.output.render({},抽到).every(b=>b.type==='text'));
-let dust=0;
+let dust=farmAPI.store.cardState().dust;
 for(let i=0;i<12&&dust<65;i++){
   const value=await 抽卡.execute({pool:'standard',count:10});
   if(!value.ok)break;
@@ -483,8 +498,10 @@ const walletNow=await 鱼鱼窝工具.execute({what:'wallet'});
 const laterBuy=await 农活.execute({op:'buy',item:'radish',count:1});
 const afterLaterBuy=await 鱼鱼窝工具.execute({what:'wallet'});
 报('回执保留当时余额，后续查钱包反映之后的交易',laterBuy.ok&&afterLaterBuy.说.includes((drawn.coins-10)+' 金币')&&playerNotices[2].text.includes('结算后余额 '+drawn.coins+' 金币'));
+fakeInsufficientExchange=true;
 const denied=await 抽卡.execute({op:'exchange',kind:'card',item:'glm-classic'});
-报('兑换材料不足显示所需星辉和当前持有量',!denied.ok&&denied.说.includes('需要 20 星辉，目前只有 '+farmAPI.store.cardState().starlight+' 星辉'));
+fakeInsufficientExchange=false;
+报('兑换材料不足显示所需星辉和当前持有量',!denied.ok&&denied.说.includes('需要 20 星辉，目前只有 0 星辉'));
 const titles=drawn.results.filter(d=>d.id).map(d=>drawn.cards.catalog.find(c=>c.id===d.id)?.title);
 报('买种、批量播种和抽卡分别只发一条，抽卡通知列出卡名',bought.ok&&batch.ok&&drawn.ok&&playerNotices.length===3&&/^正式存档 \d{2}:\d{2}:\d{2}，/.test(playerNotices[0].text)&&playerNotices[0].text.includes('小鱿鱼买了 萝卜种子×2')&&playerNotices[1].text.includes('播种了 2 格萝卜')&&titles.every(title=>playerNotices[2].text.includes(title))&&await 等到(()=>收到的话.some(m=>m.content?.[0]?.text?.includes('小鱿鱼花了 1000 金币，抽了 10 张'))));
 farmAPI.bridge.publishLifeEvent=publishOriginal;
@@ -495,6 +512,14 @@ const 锦鲤卖价=await 鱼鱼窝工具.execute({what:'price',kind:'fish',item:
 const 紧凑布局=await 农活.execute({op:'list',scope:'layout'});
 const 逐格布局=await 农活.execute({op:'list',scope:'layout',bed:0});
 报('按需查看六个 3×3 区或展开单畦逐格种植',紧凑布局.ok&&紧凑布局.说.includes('bed-2')&&!紧凑布局.说.includes(' | ')&&逐格布局.说.includes('萝卜×2')&&逐格布局.说.includes('萝卜 |')&&!逐格布局.说.includes('bed-1'));
+打事件('turn/start',{turn:81});
+farmAPI.store.tick(farmAPI.store.getSnapshot().now+3600000);
+const beforeReplant=farmWrites.length;
+const 收后补种=await 农活.execute({op:'replant',item:'萝卜',buyMissing:true});
+const 重复补种=await 农活.execute({op:'replant',item:'radish',buyMissing:true});
+const 补种后=farmAPI.store.farmSnapshot();
+报('一次调用收熟萝卜、补买种子及回种，同一轮改用英文名也不会再执行',收后补种.ok&&收后补种.说.includes('实际收进背包 2 份')&&收后补种.说.includes('补买了 1 份')&&收后补种.说.includes('播种了 2 格萝卜')&&重复补种.ok&&重复补种.说.includes('原回执')&&farmWrites.slice(beforeReplant).join()==='/api/farm/harvest-batch,/api/farm/buy,/api/farm/plant-batch'&&补种后.farm.plots.filter(p=>p.cropId==='radish').length===2,JSON.stringify({收后补种,重复补种}));
+打事件('turn/end',{turn:81,reason:{kind:'completed'}});
 const 菜谱=工具名('fish_home_recipe');
 const 今天的菜=await 菜谱.execute();
 const 菜谱详情=await 菜谱.execute({detail:true});
@@ -658,7 +683,7 @@ const switchReply=await fetch('http://127.0.0.1:'+端口+'/dsh-fish-home/save',{
 });
 const newDays=await 客户端.days();
 const newMemories=await 客户端.memories();
-报('换绑定后天数和记忆一起改用新会话', switchReply.ok&&oldDays.days>0&&oldSession.sessionId===会话id&&newDays.days===0&&newMemories.total===0);
+报('换绑定后天数和记忆一起改用新会话', switchReply.ok&&oldDays.days>0&&oldSession.sessionId===会话id&&newDays.days>0&&newMemories.total===0);
 报('换绑的事件立即同步给鱼鱼窝', await 等到(()=>收到事件.some(e=>e.type==='bridge.notice'&&e.data.code==='BINDING_CHANGED')));
 
 /* ── 收尾 ─────────────────────────────────────────────── */

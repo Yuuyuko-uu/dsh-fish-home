@@ -17,7 +17,7 @@ process.env.DSH_HOME = 家
 
 // 会话得自己选 —— 插件**不会**替人认（不选就是不选）
 const 会话id = 'session-abcdef12-3456-7890-abcd-ef1234567890'
-fs.writeFileSync(path.join(家, 'fish-room.json'), JSON.stringify({ 开: true, 会话: 会话id, 每轮注入现场: true }, null, 2), 'utf8')
+fs.writeFileSync(path.join(家, 'fish-room.json'), JSON.stringify({ 开: true, 会话: 会话id, 每轮注入现场: true, 相伴起始日: '2024-01-01' }, null, 2), 'utf8')
 
 const 房间 = 'D:/1/大肥鱼的小日子/server/bridge'
 const { BridgeClient } = await import('file:///' + 房间 + '/client.js')
@@ -191,7 +191,7 @@ const 插件 = await import('../lib/host.js')
 const 实例 = 插件.apply(ctx)
 报('走路注册失败时农活仍挂到已经绑定的会话', 注册的工具.some(t=>t.name==='fish_home_farm'));
 const 升级配置=JSON.parse(fs.readFileSync(path.join(家,'fish-room.json'),'utf8'))
-报('旧版配置迁移后关闭逐轮现场注入',升级配置.每轮注入现场===false&&升级配置.上下文策略版本===2)
+报('旧版配置迁移后关闭逐轮现场注入',升级配置.每轮注入现场===false&&升级配置.上下文策略版本===3)
 
 /* ── 发现文件 ─────────────────────────────────────────── */
 
@@ -520,6 +520,41 @@ const 重复补种=await 农活.execute({op:'replant',item:'radish',buyMissing:t
 const 补种后=farmAPI.store.farmSnapshot();
 报('一次调用收熟萝卜、补买种子及回种，同一轮改用英文名也不会再执行',收后补种.ok&&收后补种.说.includes('实际收进背包 2 份')&&收后补种.说.includes('补买了 1 份')&&收后补种.说.includes('播种了 2 格萝卜')&&重复补种.ok&&重复补种.说.includes('原回执')&&farmWrites.slice(beforeReplant).join()==='/api/farm/harvest-batch,/api/farm/buy,/api/farm/plant-batch'&&补种后.farm.plots.filter(p=>p.cropId==='radish').length===2,JSON.stringify({收后补种,重复补种}));
 打事件('turn/end',{turn:81,reason:{kind:'completed'}});
+
+const 两种种子 = [
+  {op:'buy',item:'radish',count:3}, {op:'buy',item:'tulip',count:2},
+  {op:'plant',item:'radish',count:3}, {op:'plant',item:'tulip',count:2},
+];
+const 备两种作物=await 农活.execute({op:'batch',actions:两种种子});
+报('菜和花可同批买种和播种',备两种作物.ok&&备两种作物.说.includes('播种了 2 格郁金香'),备两种作物.说);
+farmAPI.store.tick(farmAPI.store.getSnapshot().now+24*3600000);
+await 农活.execute({op:'harvest',item:'radish'});
+await 农活.execute({op:'harvest',item:'tulip'});
+const 多作物 = [
+  {op:'sell',item:'萝卜',kind:'crop',count:3}, {op:'sell',item:'郁金香',kind:'crop',count:2},
+  ...两种种子,
+];
+打事件('turn/start',{turn:82});
+const 批量前=farmWrites.length;
+const 坏批次=await 农活.execute({op:'batch',actions:[多作物[0],{op:'plant',item:'找不到的种子',count:3}]});
+报('整单先验证，后面的品种错误不会误执行前面的卖出',!坏批次.ok&&farmWrites.length===批量前);
+const 整单=await 农活.execute({op:'batch',actions:多作物});
+const 农活结算=farmAPI.store.farmSnapshot();
+const 两项补批=await 农活.execute({op:'batch',actions:[{op:'water',zone:'vegetable'},{op:'water',zone:'flower'}]});
+const 二批后=farmWrites.length;
+const [别名重提,第三批]=await Promise.all([
+  农活.execute({op:'batch',actions:多作物.map(action=>({...action,item:({萝卜:'radish',郁金香:'tulip'})[action.item]||action.item}))}),
+  农活.execute({op:'batch',actions:[{op:'buy',item:'萝卜',count:4}]}),
+]);
+报('两种作物卖出、买种、播种整单一次完成，重提与第三批不写存档',整单.ok&&整单.说.split('\n').length===7&&整单.说.includes('余额 '+农活结算.wallet.coins+' 金币')&&农活结算.farm.plots.filter(plot=>plot.cropId==='radish').length===3&&农活结算.farm.plots.filter(plot=>plot.cropId==='tulip').length===2&&两项补批.ok&&别名重提.ok&&别名重提.说.includes('原回执')&&!第三批.ok&&第三批.说.includes('已执行两次')&&二批后===批量前+8&&farmWrites.length===二批后,JSON.stringify({整单,两项补批,第三批}));
+await preStep({agent:假agent,messages:[]},()=>({kind:'enter'}));
+报('两批结束后，收尾步骤不再把农活工具交给模型',农活.__卸了===true);
+打事件('turn/end',{turn:82,reason:{kind:'completed'}});
+打事件('turn/start',{turn:83});
+报('新一轮重新给模型农活工具',注册的工具.some(tool=>tool.name==='fish_home_farm'&&!tool.__卸了));
+const 下一轮=await 农活.execute({op:'batch',actions:[{op:'buy',item:'萝卜',count:4}]});
+报('新对话轮次恢复农活额度',下一轮.ok&&farmWrites.length===二批后+1);
+打事件('turn/end',{turn:83,reason:{kind:'completed'}});
 const 菜谱=工具名('fish_home_recipe');
 const 今天的菜=await 菜谱.execute();
 const 菜谱详情=await 菜谱.execute({detail:true});

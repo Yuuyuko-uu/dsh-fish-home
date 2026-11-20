@@ -11,7 +11,7 @@ const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'fish-home-safe-update-'))
 const home = path.join(temp, 'profile', 'fish-home-room')
 const stage = path.join(temp, 'release')
 const downloads = path.join(temp, 'downloads')
-const zip = path.join(downloads, 'fish-home-room-0.1.1.zip')
+const zip = path.join(downloads, 'fish-home-room-0.1.2.zip')
 const badZip = path.join(downloads, 'fish-home-room-invalid.zip')
 const updateScript = path.join(home, 'update-fish-home.ps1')
 
@@ -35,7 +35,7 @@ test('room updater changes only runtime files and keeps a rollback copy', () => 
     fs.mkdirSync(stage, { recursive: true })
     fs.mkdirSync(downloads, { recursive: true })
     writeRuntime(home, '0.1.0')
-    writeRuntime(stage, '0.1.1')
+    writeRuntime(stage, '0.1.2')
     fs.writeFileSync(path.join(home, 'fish-room.json'), 'custom-root-config')
     fs.mkdirSync(path.join(home, 'data'), { recursive: true })
     fs.writeFileSync(path.join(home, 'data', 'life.sqlite'), 'saved-game')
@@ -52,8 +52,8 @@ test('room updater changes only runtime files and keeps a rollback copy', () => 
 
     const result = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', updateScript, zip], { encoding: 'utf8', timeout: 30000 })
     assert.equal(result.status, 0, result.stderr || result.stdout)
-    assert.equal(fs.readFileSync(path.join(home, 'app-server.js'), 'utf8'), '// 0.1.1')
-    assert.equal(fs.readFileSync(path.join(home, 'dist', 'index.html'), 'utf8'), '0.1.1')
+    assert.equal(fs.readFileSync(path.join(home, 'app-server.js'), 'utf8'), '// 0.1.2')
+    assert.equal(fs.readFileSync(path.join(home, 'dist', 'index.html'), 'utf8'), '0.1.2')
     assert.equal(fs.readFileSync(path.join(home, 'data', 'life.sqlite'), 'utf8'), 'saved-game')
     assert.equal(fs.readFileSync(path.join(home, 'data', 'life.sqlite-wal'), 'utf8'), 'old-wal')
     assert.equal(fs.readFileSync(path.join(home, 'data', 'life.sqlite-shm'), 'utf8'), 'old-shm')
@@ -70,7 +70,7 @@ test('room updater changes only runtime files and keeps a rollback copy', () => 
     zipDirectory(invalid, badZip)
     const rejected = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', updateScript, badZip], { encoding: 'utf8', timeout: 30000 })
     assert.equal(rejected.status, 1)
-    assert.equal(fs.readFileSync(path.join(home, 'app-server.js'), 'utf8'), '// 0.1.1')
+    assert.equal(fs.readFileSync(path.join(home, 'app-server.js'), 'utf8'), '// 0.1.2')
     assert.equal(fs.readFileSync(path.join(home, 'data', 'life.sqlite'), 'utf8'), 'saved-game')
   } finally {
     const resolved=fs.realpathSync(temp);

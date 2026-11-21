@@ -90,7 +90,7 @@ try {
   state.cards.dust=70;
   fixtureDb.prepare("UPDATE meta SET value=? WHERE key='state'").run(JSON.stringify(state));
 } finally { fixtureDb.close(); }
-const farmAPI=await createAPI({dataDir:farmHome,weatherLookup:async place=>({
+let farmAPI=await createAPI({dataDir:farmHome,farmRandom:()=>.99,weatherLookup:async place=>({
   place,weather:place==='海边'?'rain':'snow',temp:12,forecast:[{date:'2026-11-20',weather:'rain',min:8,max:13}],
 })});
 farmAPI.store.setSettings({autonomy:false});
@@ -137,6 +137,13 @@ const 服务 = http.createServer(async (req, res) => {
     res.writeHead(200,{'content-type':'image/png'}).end(demoPng);return;
   }
   if(址.pathname==='/api/life/activity'){
+    if(址.searchParams.get('status')==='1'){
+      const state=farmAPI.store.getSnapshot();
+      res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({
+        activity:{id:'old-wake',room:'bedroom',action:'idle',label:'起床'},presence:livePresence,
+        needs:{...state.needs,energy:47,satiety:36},mood:62,mood来源:'feiyu-mood',recentBodyActivity:'刚喂过鱼。',
+      }));return;
+    }
     if(址.searchParams.get('summary')==='1'){
       const state=farmAPI.store.getSnapshot();
       res.writeHead(200,{'Content-Type':'application/json'}).end(JSON.stringify({
@@ -396,7 +403,8 @@ const 选择结果 = await 日常工具.execute({id:'sit_swing'});
 报('会话能选择已知活动并拿到接受结果', 选择结果.ok && 选择结果.activity?.action==='sit_swing' && 选择结果.说.includes('已安排'));
 const 鱼鱼窝工具 = 注册的工具.find(t=>t.name==='fish_home');
 const 活动状态 = await 鱼鱼窝工具.execute({what:'status'});
-报('状态工具按 DSH 的参数顺序渲染实际结果', 活动状态.ok && 鱼鱼窝工具.output.render({what:'status'},活动状态)[0].text==='活动：闲着。');
+const 身体状态文=鱼鱼窝工具.output.render({what:'status'},活动状态)[0].text;
+报('一次状态查询带身体感受和唯一的有效心情', 活动状态.ok && 身体状态文.startsWith('当前安排：闲着。')&&身体状态文.includes('有点累，饿了，心情 62/100（鱼的心情）')&&(身体状态文.match(/心情 62/g)||[]).length===1&&身体状态文.includes('推了三下秋千'),身体状态文);
 const 看一眼=注册的工具.find(t=>t.name==='fish_home_look');
 const 照片=await 看一眼.execute({说明:'庭院'});
 报('看一眼默认从角色第一人称拍摄并返回图片附件', photoView==='dayu' && 看一眼.output.render({说明:'庭院'},照片).some(block=>block.type==='image'&&block.attachment.attachmentId==='att-fake'));
@@ -415,7 +423,30 @@ movementError={error:'鱼鱼现在走不开。'};
 const blocked=await 走路.execute({dest:'pond'});
 报('角色走不开时不自动再次打断',!blocked.ok&&movementAttempts===attemptsBeforeBlocked+1);
 const 池边状态=await 鱼鱼窝工具.execute({what:'status'});
-报('go 后立即查状态显示实际池边，忽略旧起床记录',池边状态.说==='活动：庭院 · 池塘边 · 闲着。');
+报('go 后立即查状态显示实际池边，忽略旧起床记录',池边状态.说.startsWith('活动：庭院 · 池塘边 · 闲着。')&&!池边状态.说.includes('起床'));
+const 摘要情景={schema:LIFE_EVENT_SCHEMA,id:'scene-pushed-once',at:Date.now(),kind:'scene',reaction:'swing',text:'推了六下秋千。'};
+const 已推前=收到的话.length;
+await 客户端.sendLifeEvent(摘要情景);
+await 客户端.sendLifeEvent(摘要情景);
+const 推后身体状态=await 鱼鱼窝工具.execute({what:'status'});
+报('连续推秋千的摘要主动送一次，既不重送也不重复放进状态或上下文',收到的话.length===已推前+1&&收到的话.at(-1).content[0].text.includes('推了六下秋千')&&!推后身体状态.说.includes('推了六下秋千')&&上下文们.every(x=>!x.text().includes('推了六下秋千'))&&推后身体状态.说.includes('刚喂过鱼'),推后身体状态.说);
+const 送天气=weather=>客户端.sendPetState({schema:PET_STATE_SCHEMA,at:Date.now(),snapshot:{weather,hour:21.75,period:'夜晚',activity:{action:'idle'}}});
+await 送天气('clear');
+const 天气通知前=收到的话.filter(m=>m.source.kind==='fish-home-state').length;
+await 送天气('cloudy');
+await 送天气('clear');
+await 送天气('rain');
+await 送天气('rain');
+await 送天气('clear');
+const 天气通知=收到的话.filter(m=>m.source.kind==='fish-home-state').slice(天气通知前);
+报('晴阴切换和重复状态静默，雨开始和停各只发一条',天气通知.length===2&&天气通知[0].content[0].text.includes('下雨')&&天气通知[1].content[0].text.includes('雨雪停了'));
+await fetch('http://127.0.0.1:'+端口+'/dsh-fish-home/save',{
+  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({每轮注入现场:false}),
+});
+报('关闭逐轮现场时身体状态仍可直接查询',上下文们.every(context=>context.__卸了)&&(await 鱼鱼窝工具.execute({what:'status'})).说.includes('有点累'));
+await fetch('http://127.0.0.1:'+端口+'/dsh-fish-home/save',{
+  method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({每轮注入现场:true}),
+});
 const 自然移动前=movementAttempts;
 打事件('turn/start',{turn:10});
 打事件('assistant/message',{turn:10,message:{role:'assistant',content:[{type:'text',text:'我先回房间了。'}]}});
@@ -423,15 +454,15 @@ const 自然移动前=movementAttempts;
 报('她明确说自己回房间时身体只执行一次并等待到达',await 等到(()=>movementAttempts===自然移动前+1)&&movement.args.dest==='indoor'&&movement.wait===true);
 const 农活=注册的工具.find(t=>t.name==='fish_home_farm');
 const 列田=await 农活.execute({op:'list'});
-const 买种=await 农活.execute({op:'buy',item:'radish',count:10});
+const 买种=await 农活.execute({op:'buy',item:'radish',count:8});
 const seedBefore=farmAPI.store.钱袋().seeds.radish;
 const legacy=await 农活.execute({op:'plant',item:'radish',plotId:'bed-0-0-0'});
-const 种下=await 农活.execute({op:'plant',item:'萝卜',count:10});
-const 重复种下=await 农活.execute({op:'plant',item:'萝卜',count:10});
+const 种下=await 农活.execute({op:'plant',item:'萝卜',count:8});
+const 重复种下=await 农活.execute({op:'plant',item:'萝卜',count:8});
 const afterPlant=farmAPI.store.farmSnapshot();
-报('单格工具参数不再暴露，10 格播种一次且重复请求不再消耗库存',列田.ok&&!列田.说.includes('bed-0-')&&买种.ok&&!legacy.ok&&!Object.hasOwn(农活.parameters.properties,'plotId')&&种下.ok&&!重复种下.ok&&afterPlant.farm.plots.filter(p=>p.cropId==='radish').length===10&&seedBefore-(afterPlant.wallet.seeds.radish||0)===10);
+报('单格工具参数不再暴露，8 格播种一次且重复请求不再消耗库存',列田.ok&&!列田.说.includes('bed-0-')&&买种.ok&&!legacy.ok&&!Object.hasOwn(农活.parameters.properties,'plotId')&&种下.ok&&!重复种下.ok&&afterPlant.farm.plots.filter(p=>p.cropId==='radish').length===8&&seedBefore-(afterPlant.wallet.seeds.radish||0)===8);
 const 浇水=await 农活.execute({op:'water',zone:'vegetable'});
-报('批量浇水覆盖所有需要浇水的作物',浇水.ok&&farmAPI.store.farmSnapshot().farm.plots.filter(p=>p.wateredUntil>0).length===10);
+报('批量浇水覆盖所有需要浇水的作物',浇水.ok&&farmAPI.store.farmSnapshot().farm.plots.filter(p=>p.wateredUntil>0).length===8);
 await 农活.execute({op:'buy',item:'guppy',count:3});
 const stocked=await 农活.execute({op:'stock',item:'guppy',count:3});
 farmAPI.store.tick(Date.now()+8*24*3600000);
@@ -441,8 +472,8 @@ const pondNow=await 鱼鱼窝工具.execute({what:'pond'});
 报('成鱼按批次进鱼篓，查询直接读当前池塘而不是插件快照',stocked.ok&&捞鱼.ok&&捞鱼后.wallet.fish.guppy===2&&捞鱼后.farm.pond.fish.length===1&&pondNow.说.includes('池塘在养 1/8')&&pondNow.说.includes('鱼篓成鱼（已捞、可卖）：guppy×2'),pondNow.说);
 const 收成=await 农活.execute({op:'harvest',item:'radish'});
 const afterHarvest=farmAPI.store.farmSnapshot();
-const 出货=await 农活.execute({op:'sell',item:'radish',count:10});
-报('批量收菜写入背包，出售实际入账',收成.ok&&afterHarvest.wallet.crops.radish===10&&!afterHarvest.farm.plots.some(p=>p.cropId)&&出货.ok&&farmAPI.store.钱袋().coins>afterHarvest.wallet.coins);
+const 出货=await 农活.execute({op:'sell',item:'radish',count:8});
+报('批量收菜写入背包，出售实际入账',收成.ok&&afterHarvest.wallet.crops.radish===8&&!afterHarvest.farm.plots.some(p=>p.cropId)&&出货.ok&&farmAPI.store.钱袋().coins>afterHarvest.wallet.coins);
 const 概率=await 鱼鱼窝工具.execute({what:'pity'});
 const 抽卡=注册的工具.find(t=>t.name==='fish_home_draw');
 const 抽之前=JSON.stringify(farmAPI.store.cardState());
@@ -508,10 +539,33 @@ farmAPI.bridge.publishLifeEvent=publishOriginal;
 const 卖价=await 鱼鱼窝工具.execute({what:'price'});
 const 明日行情=await 鱼鱼窝工具.execute({what:'market'});
 const 锦鲤卖价=await 鱼鱼窝工具.execute({what:'price',kind:'fish',item:'koi'});
+const 巨型萝卜卖价=await 鱼鱼窝工具.execute({what:'price',kind:'giant',item:'萝卜'});
+const {market:巨型报价基准}=await fetch('http://127.0.0.1:'+端口+'/api/farm').then(response=>response.json());
+const 普通萝卜价=巨型报价基准.items.find(item=>item.id==='radish').sellPrice;
+报('DSH 可单独查询巨型售价，与当前普通作物行情一致',巨型萝卜卖价.ok&&巨型萝卜卖价.说.includes('巨型萝卜')&&巨型萝卜卖价.说.includes('今日售 '+Math.round(1.8*9*普通萝卜价)),巨型萝卜卖价.说);
 报('行情覆盖整张价目，支持只查一种鱼和查看预告',卖价.说.split('\n').length===41&&明日行情.说.split('\n').length===2&&锦鲤卖价.说.includes('锦鲤')&&!锦鲤卖价.说.includes('孔雀鱼'));
 const 紧凑布局=await 农活.execute({op:'list',scope:'layout'});
 const 逐格布局=await 农活.execute({op:'list',scope:'layout',bed:0});
-报('按需查看六个 3×3 区或展开单畦逐格种植',紧凑布局.ok&&紧凑布局.说.includes('bed-2')&&!紧凑布局.说.includes(' | ')&&逐格布局.说.includes('萝卜×2')&&逐格布局.说.includes('萝卜 |')&&!逐格布局.说.includes('bed-1'));
+报('按需查看六个 3×3 区或展开单畦逐格种植',紧凑布局.ok&&紧凑布局.说.includes('bed-2')&&紧凑布局.说.includes('花田：')&&紧凑布局.说.includes('总空位')&&逐格布局.说.includes('萝卜×2')&&逐格布局.说.includes('萝卜 |')&&!逐格布局.说.includes('bed-1'));
+打事件('turn/start',{turn:80});
+const conflictBefore=farmWrites.length;
+const 错品种=await 农活.execute({op:'batch',actions:[{op:'harvest'},{op:'replant',item:'不存在的作物'}]});
+报('未知补种品种在批前拒绝，前面的收获也不落地',!错品种.ok&&错品种.说.includes('整批未执行')&&farmWrites.length===conflictBefore,错品种.说);
+farmAPI.store.买('seed','radish',1,'chain-extra-seed');
+farmAPI.store.tick(farmAPI.store.getSnapshot().now+3600000);
+const 收卖种前=farmAPI.store.farmSnapshot();
+const 原地=收卖种前.farm.plots.filter(p=>p.cropId==='radish').map(p=>p.id);
+const 现场行情=await fetch('http://127.0.0.1:'+端口+'/api/farm').then(r=>r.json());
+const 卖价萝卜=现场行情.market.items.find(x=>x.id==='radish').sellPrice;
+const 收卖种单={op:'batch',actions:[{op:'harvest'},{op:'sell'},{op:'replant'}]};
+const 收卖种=await 农活.execute(收卖种单);
+const 重放收卖种=await 农活.execute(收卖种单);
+const 收卖种后=farmAPI.store.farmSnapshot();
+报('一张单收、卖、原地补种；按实际行情结算，重复提交不扣种也不重复入账',收卖种.ok&&重放收卖种.ok&&重放收卖种.说.includes('原回执')&&farmWrites.slice(conflictBefore).join()==='/api/farm/harvest-batch,/api/farm/sell,/api/farm/plant-batch'&&原地.length===2&&收卖种后.farm.plots.filter(p=>p.cropId==='radish').map(p=>p.id).join()===原地.join()&&收卖种后.wallet.coins===收卖种前.wallet.coins+2*卖价萝卜&&(收卖种后.wallet.seeds.radish||0)===(收卖种前.wallet.seeds.radish||0)-2&&(收卖种后.wallet.crops.radish||0)===(收卖种前.wallet.crops.radish||0),收卖种.说);
+const 局部失败=await 农活.execute({op:'batch',actions:[{op:'water',zone:'vegetable'},{op:'sell',item:'萝卜',kind:'crop',count:999}]});
+报('执行中的失败会区分已完成的操作和未入账的操作',!局部失败.ok&&局部失败.说.includes('已完成的操作已入账')&&局部失败.说.includes('浇了水')&&局部失败.说.includes('要卖 999 份萝卜，背包只有 0 份')&&farmAPI.store.farmSnapshot().farm.plots.filter(p=>p.wateredUntil>0).length===2,局部失败.说);
+打事件('turn/end',{turn:80,reason:{kind:'completed'}});
+farmAPI.store.买('seed','radish',1,'next-case-seed');
 打事件('turn/start',{turn:81});
 farmAPI.store.tick(farmAPI.store.getSnapshot().now+3600000);
 const beforeReplant=farmWrites.length;
@@ -548,13 +602,90 @@ const [别名重提,第三批]=await Promise.all([
 ]);
 报('两种作物卖出、买种、播种整单一次完成，重提与第三批不写存档',整单.ok&&整单.说.split('\n').length===7&&整单.说.includes('余额 '+农活结算.wallet.coins+' 金币')&&农活结算.farm.plots.filter(plot=>plot.cropId==='radish').length===3&&农活结算.farm.plots.filter(plot=>plot.cropId==='tulip').length===2&&两项补批.ok&&别名重提.ok&&别名重提.说.includes('原回执')&&!第三批.ok&&第三批.说.includes('已执行两次')&&二批后===批量前+8&&farmWrites.length===二批后,JSON.stringify({整单,两项补批,第三批}));
 await preStep({agent:假agent,messages:[]},()=>({kind:'enter'}));
-报('两批结束后，收尾步骤不再把农活工具交给模型',农活.__卸了===true);
+报('达到写入上限时工具仍可查询，不会突然消失',农活.__卸了!==true&&(await 农活.execute({op:'list',scope:'farm'})).ok);
 打事件('turn/end',{turn:82,reason:{kind:'completed'}});
 打事件('turn/start',{turn:83});
 报('新一轮重新给模型农活工具',注册的工具.some(tool=>tool.name==='fish_home_farm'&&!tool.__卸了));
 const 下一轮=await 农活.execute({op:'batch',actions:[{op:'buy',item:'萝卜',count:4}]});
 报('新对话轮次恢复农活额度',下一轮.ok&&farmWrites.length===二批后+1);
 打事件('turn/end',{turn:83,reason:{kind:'completed'}});
+farmAPI.store.tick(farmAPI.store.getSnapshot().now+24*3600000);
+打事件('turn/start',{turn:84});
+const 自动补种=await 农活.execute({op:'batch',actions:[{op:'replant',buyMissing:true}]});
+报('replant 省略品种时自动收获并补种成熟作物',自动补种.ok&&!自动补种.说.includes('找不到作物')&&(自动补种.说.includes('补种')||自动补种.说.includes('播种')),自动补种.说);
+打事件('turn/end',{turn:84,reason:{kind:'completed'}});
+打事件('turn/start',{turn:85});
+const 未熟=await 农活.execute({op:'batch',actions:[{op:'replant',item:'radish'}]});
+const 未种=await 农活.execute({op:'batch',actions:[{op:'replant',item:'tomato'}]});
+报('没有种和已经种但未熟返回不同原因',!未熟.ok&&未熟.说.includes('没有成熟')&&!未种.ok&&未种.说.includes('没有种植'),未熟.说+' / '+未种.说);
+打事件('turn/end',{turn:85,reason:{kind:'completed'}});
+farmAPI.store.买('fish','guppy',2,'catch-sell-fry');
+farmAPI.store.farmBatch('stock',{item:'guppy',count:2,requestId:'catch-sell-stock'});
+farmAPI.store.tick(farmAPI.store.getSnapshot().now+24*3600000);
+打事件('turn/start',{turn:86});
+const 捞卖前=farmAPI.store.farmSnapshot();
+const 捞卖单={op:'batch',actions:[{op:'catch'},{op:'sell'}]};
+const 捞卖=await 农活.execute(捞卖单);
+const 捞卖后=farmAPI.store.farmSnapshot();
+报('一次捞鱼并出售实际捞到的鱼，不动之前的成鱼库存',捞卖.ok&&捞卖.说.includes('实际捞到 '+捞卖前.farm.pond.fish.length+' 条')&&捞卖.说.includes('卖了 '+捞卖前.farm.pond.fish.length+' 份孔雀鱼')&&捞卖后.farm.pond.fish.length===0&&捞卖后.wallet.fish.guppy===捞卖前.wallet.fish.guppy&&捞卖后.wallet.coins>捞卖前.wallet.coins,捞卖.说);
+打事件('turn/end',{turn:86,reason:{kind:'completed'}});
+farmAPI.store.买('seed','radish',1,'giant-first-blocker');
+farmAPI.store.farmPlant({plotId:'bed-2-0-0',cropId:'radish',requestId:'giant-first-blocker-plant'});
+const 巨型开单前=farmAPI.store.farmSnapshot();
+const 巨型请求前=farmWrites.length;
+const 巨型通知前=收到的话.length;
+const 巨型单={op:'batch',actions:[{op:'harvest'},{op:'sell'},{op:'plant',item:'番茄',layout:'giant',bed:2,buyMissing:true}]};
+打事件('turn/start',{turn:87});
+const 巨型单结果=await 农活.execute(巨型单);
+const 巨型重复=await 农活.execute(巨型单);
+const 巨型种完=farmAPI.store.farmSnapshot();
+const 整块番茄=巨型种完.farm.plots.filter(p=>p.cropId==='tomato');
+报('一次收菜、卖掉本批、补买并把番茄全种在第二区，第一区有作物就自动跳过',巨型单结果.ok&&巨型单结果.说.includes('第 2 区：种了 9 格番茄')&&巨型单结果.说.includes('补买了 9 份')&&整块番茄.length===9&&整块番茄.every(p=>/^bed-2-\d-[345]$/.test(p.id))&&巨型种完.farm.plots.find(p=>p.id==='bed-2-0-0').cropId==='radish'&&巨型开单前.farm.plots.some(p=>p.ready)&&farmWrites.slice(巨型请求前).join()==='/api/farm/harvest-batch,/api/farm/sell,/api/farm/sell,/api/farm/plant-giant-batch'&&巨型重复.ok&&巨型重复.说.includes('原回执')&&收到的话.length===巨型通知前,巨型单结果.说);
+打事件('turn/end',{turn:87,reason:{kind:'completed'}});
+打事件('turn/start',{turn:88});
+const 没整区单={op:'batch',actions:[{op:'plant',item:'tomato',bed:2,layout:'giant',buyMissing:true}]};
+const 没有整区=await 农活.execute(没整区单);
+const 没有整区后=farmAPI.store.farmSnapshot();
+报('没有整块给一次明确的失败回执，不扣金币、不偷偷普通种',!没有整区.ok&&没有整区.说.includes('没有完整的 3×3 空区，没有买种，也没有播种')&&没有整区后.wallet.coins===巨型种完.wallet.coins&&没有整区后.farm.plots.filter(p=>p.cropId==='tomato').length===9,没有整区.说);
+打事件('turn/end',{turn:88,reason:{kind:'completed'}});
+// Replay the reported market-and-farm request with a fresh test wallet.
+farmAPI.store.买('fish','koi',8,'reported-koi-start');
+farmAPI.store.farmBatch('stock',{item:'koi',count:8,requestId:'reported-koi-fill'});
+farmAPI.store.tick(farmAPI.store.getSnapshot().now+5*3600000);
+farmAPI.store.farmBatch('catch',{item:'koi',count:8,requestId:'reported-koi-catch'});
+打事件('turn/start',{turn:89});
+const 复现原单=await 农活.execute({op:'batch',actions:[{count:8,item:'锦鲤',kind:'fish',op:'sell'},
+  {count:8,item:'锦鲤',kind:'fish',op:'buy'},{count:8,op:'stock'},{item:'萝卜',layout:'giant',buyMissing:true,op:'plant'}]});
+报('原单一次完成：放苗承接唯一鱼种，萝卜也能种整块',复现原单.ok&&复现原单.说.includes('放养了 8 条锦鲤鱼苗')&&复现原单.说.includes('种了 9 格萝卜'),复现原单.说);
+打事件('turn/end',{turn:89,reason:{kind:'completed'}});
+打事件('turn/start',{turn:90});
+打事件('turn/start', { turn: 39 });
+const 花田播种前=farmAPI.store.farmSnapshot();
+const 花田播种=await 农活.execute({op:'batch',actions:[{op:'plant',item:'仙女玫瑰',layout:'giant',buyMissing:true}]});
+const 花田播种后=farmAPI.store.farmSnapshot();
+报('旧的巨型播种参数遇到花种时只种一格，只补买一份种子',花田播种.ok&&花田播种.说.includes('播种了 1 格仙女玫瑰')&&花田播种.说.includes('补买了 1 份种子')&&花田播种后.farm.plots.filter(plot=>plot.cropId==='fairy_rose').length===1&&花田播种前.farm.plots.filter(plot=>!plot.cropId).length===花田播种后.farm.plots.filter(plot=>!plot.cropId).length+1,花田播种.说);
+打事件('turn/start', { turn: 40 });
+const 种满前=farmAPI.store.farmSnapshot();
+const 种满单={op:'batch',actions:[{item:'萝卜',op:'plant',fill:true,buyMissing:true},{item:'郁金香',op:'plant',zone:'flower',fill:true,buyMissing:true}]};
+const 种满=await 农活.execute(种满单);
+const 种满后=farmAPI.store.farmSnapshot();
+const 空菜=种满前.farm.plots.filter(p=>!p.cropId&&!p.id.startsWith('flower-')).length;
+const 空花=种满前.farm.plots.filter(p=>!p.cropId&&p.id.startsWith('flower-')).length;
+const 应花=Math.max(0,空菜-(种满前.wallet.seeds.radish||0))*10+Math.max(0,空花-(种满前.wallet.seeds.tulip||0))*25;
+报('普通播种找完菜田和花田所有空格，只买实际缺的份数，不改已种作物',种满.ok&&种满后.farm.plots.every(p=>p.cropId)&&种满后.wallet.coins===种满前.wallet.coins-应花&&种满前.farm.plots.filter(p=>p.cropId).every(p=>种满后.farm.plots.find(q=>q.id===p.id).plantId===p.plantId),种满.说);
+打事件('turn/end',{turn:90,reason:{kind:'completed'}});
+打事件('turn/start',{turn:91});
+const 未熟畦=[0,1,2].find(bed=>{
+  const rows=种满后.farm.plots.filter(p=>p.id.startsWith(`bed-${bed}-`)&&p.cropId==='radish');
+  return rows.length>0&&!rows.some(p=>p.ready);
+});
+const 早收=await 农活.execute({op:'batch',actions:[{op:'harvest',item:'萝卜',bed:未熟畦}]});
+const 未种菜=await 农活.execute({op:'batch',actions:[{op:'harvest',item:'甜瓜',bed:未熟畦}]});
+报('收获失败明确指出菜畦，区分未种和未熟',未熟畦!==undefined&&!早收.ok&&早收.说.includes(`菜畦 ${未熟畦}`)&&早收.说.includes('没有成熟')&&!未种菜.ok&&未种菜.说.includes(`菜畦 ${未熟畦}`)&&未种菜.说.includes('没有种植甜瓜'),早收.说+' / '+未种菜.说);
+const 前回执余额=farmAPI.store.钱袋().coins;
+const 独立失败=await 农活.execute({op:'batch',actions:[{op:'buy',item:'锦鲤',count:1},{op:'plant',item:'不存在的果实',layout:'giant',buyMissing:true}]});
+报('巨型品种错误只跳过播种，已买的鱼苗保留',!独立失败.ok&&独立失败.说.includes('买了 1 份锦鲤鱼苗')&&独立失败.说.includes('这一步没买种或播种')&&farmAPI.store.钱袋().coins===前回执余额-200,独立失败.说);
+打事件('turn/end',{turn:91,reason:{kind:'completed'}});
 const 菜谱=工具名('fish_home_recipe');
 const 今天的菜=await 菜谱.execute();
 const 菜谱详情=await 菜谱.execute({detail:true});
@@ -710,6 +841,57 @@ const 没配 = await (await fetch('http://127.0.0.1:' + 端口 + '/fish-room/v1/
 画服务.closeAllConnections?.()
 await farmAPI.close();
 画服务.close()
+
+// Use a deterministic mature bed and two flowers. Both DSH tools go through the real HTTP API.
+const {createFarmState}=await import('file:///'+房间+'/../farm-state.js');
+const {cropTiming}=await import('file:///'+房间+'/../farm.js');
+const 巨型存档 = new DatabaseSync(path.join(farmHome,'life.sqlite'));
+try {
+  const state=JSON.parse(巨型存档.prepare("SELECT value FROM meta WHERE key='state'").get().value);
+  const at=state.lastTick;
+  state.farm=createFarmState();
+  state.bag.crops={};
+  state.bag.giants={radish:1,tulip:1};
+  const 菜格=state.farm.plots.filter(plot=>/^bed-0-[0-2]-[0-2]$/.test(plot.id));
+  const 花格=state.farm.plots.filter(plot=>plot.id==='flower-0');
+  for (const [id,cropId,anchorPlotId,plots] of [
+    ['giant-test-radish','radish','bed-0-1-1',菜格],
+    ['giant-test-tulip','tulip','flower-0',花格],
+  ]) {
+    state.farm.giants.push({id,cropId,anchorPlotId,plotIds:plots.map(plot=>plot.id),formedAt:at});
+    for (const plot of plots) Object.assign(plot,{cropId,plantId:`plant-${plot.id}`,plantedAt:at,
+      updatedAt:at,progressMs:cropTiming(cropId).totalMs,giantId:id});
+  }
+  Object.assign(state.farm.plots.find(plot=>plot.id==='flower-1'),{cropId:'tulip',plantId:'ordinary-tulip',
+    plantedAt:at,updatedAt:at,progressMs:cropTiming('tulip').totalMs});
+  巨型存档.prepare("UPDATE meta SET value=? WHERE key='state'").run(JSON.stringify(state));
+} finally { 巨型存档.close(); }
+farmAPI=await createAPI({dataDir:farmHome});
+farmAPI.store.setSettings({autonomy:false});
+farmAPI.store.设睡觉(false);
+const 报价=await fetch('http://127.0.0.1:'+端口+'/api/farm').then(response=>response.json());
+const 普通花价=报价.market.items.find(item=>item.id==='tulip').sellPrice;
+const 巨型花价=Math.round(普通花价*1.8);
+const 巨型菜价=Math.round(报价.market.items.find(item=>item.id==='radish').sellPrice*9*1.8);
+const 查花价=await 鱼鱼窝工具.execute({what:'price',kind:'giant',item:'tulip'});
+const 查巨型田=await 鱼鱼窝工具.execute({what:'farm'});
+报('巨型查价按一份普通花折算，田里按实际可收的巨型数量回报',查花价.ok&&查花价.说.includes('今日售 '+巨型花价+' /')&&查巨型田.说.includes('巨型萝卜×1、巨型郁金香×1，共占 10 格')&&查巨型田.说.includes('tulip 0 格生长、1 格成熟'),查花价.说+' / '+查巨型田.说);
+打事件('turn/start',{turn:110});
+const 本批巨型单={op:'batch',actions:[{op:'harvest'},{op:'sell'}]};
+const 巨型写入前=farmWrites.length;
+const 本批巨型=await 农活.execute(本批巨型单);
+const 本批巨型重试=await 农活.execute(本批巨型单);
+const 收卖完=farmAPI.store.farmSnapshot();
+const 到账=巨型花价+巨型菜价+普通花价;
+报('巨型菜九格、巨型花一格，各收一份，批量出售按真实单价入账且重试不重复',本批巨型.ok&&本批巨型.说.includes('实际收进背包 3 份')&&本批巨型.说.includes('本次共收了 11 格')&&本批巨型.说.includes('巨型萝卜×1、巨型郁金香×1、郁金香×1')&&本批巨型.说.includes(`卖了 1 份巨型郁金香，入账 ${巨型花价} 金币`)&&本批巨型.说.includes(`卖了 1 份巨型萝卜，入账 ${巨型菜价} 金币`)&&本批巨型.说.includes(`余额 ${报价.coins+到账} 金币`)&&本批巨型重试.说.includes('原回执')&&farmWrites.length===巨型写入前+4&&收卖完.wallet.coins===报价.coins+到账&&收卖完.wallet.giants.radish===1&&收卖完.wallet.giants.tulip===1&&收卖完.farm.plots.every(plot=>!plot.cropId),本批巨型.说);
+打事件('turn/end',{turn:110,reason:{kind:'completed'}});
+打事件('turn/start',{turn:111});
+const 超卖=await 农活.execute({op:'sell',kind:'giant',item:'郁金香',count:2});
+const 卖一朵=await 农活.execute({op:'sell',kind:'giant',item:'郁金香'});
+const 单卖完=farmAPI.store.farmSnapshot();
+报('指定巨型出售支持品种别名，库存不足回报准确余量',!超卖.ok&&超卖.说.includes('要卖 2 份巨型郁金香，背包只有 1 份')&&卖一朵.ok&&卖一朵.说.includes(`每份 ${巨型花价} 金币，背包还剩 0 份巨型郁金香`)&&单卖完.wallet.coins===收卖完.wallet.coins+巨型花价&&单卖完.wallet.giants.radish===1&&!单卖完.wallet.giants.tulip,超卖.说+' / '+卖一朵.说);
+打事件('turn/end',{turn:111,reason:{kind:'completed'}});
+await farmAPI.close();
 
 const oldDays=await 客户端.days();
 const oldSession=await (await fetch(发现.url+'/days',{headers:{Authorization:'Bearer '+发现.token}})).json();

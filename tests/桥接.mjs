@@ -76,7 +76,7 @@ const 代理 = {
 const 路由表 = new Map()
 const demoPng=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jkCgAAAAASUVORK5CYII=','base64');
 let photoView;
-let photoAttempts=0, movement, livePresence, fakeDuplicateDraw=false, fakeInsufficientExchange=false, movementAttempts=0, movementError=null;
+let photoAttempts=0, movement, livePresence, fakeDuplicateDraw=false, fakeOldRoomHundred=false, fakeInsufficientExchange=false, movementAttempts=0, movementError=null;
 const farmWrites=[];
 const farmHome=fs.mkdtempSync(path.join(os.tmpdir(),'fish-home-farm-api-'));
 fs.writeFileSync(path.join(farmHome,'dsh-bridge.json'),'{"enabled":false}');
@@ -114,8 +114,11 @@ const 服务 = http.createServer(async (req, res) => {
     livePresence={scene:'garden',visible:true,place:movement.args.dest,action:'idle',at:Date.now()};
     res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({ok:true,presence:livePresence}));return;
   }
+  if(fakeOldRoomHundred&&址.pathname==='/api/cards/draw'){
+    req.resume();res.writeHead(400,{'content-type':'application/json'}).end(JSON.stringify({ok:false,error:'无效的卡池或抽卡数量。'}));return;
+  }
   if(fakeDuplicateDraw&&址.pathname==='/api/cards/draw'){
-    res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({ok:true,coins:100,cards:{catalog:[{id:'kimi-classic',title:'Kimi'},{id:'deepseek',title:'DeepSeek'}],owned:{'kimi-classic':{},deepseek:{}},dust:6,starlight:5},results:[{id:'kimi-classic',rarity:'5★',finish:3,first:false,converted:true,starlight:5},{id:'deepseek',rarity:'4★',finish:1,first:false,upgrade:true,dust:6}]}));return;
+    res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({ok:true,coins:100,cards:{catalog:[{id:'kimi-classic',title:'Kimi'},{id:'deepseek',title:'DeepSeek'}],owned:{'kimi-classic':{},deepseek:{}},dust:6,starlight:5},results:[{id:'kimi-classic',rarity:'5★',finish:3,first:false,converted:true,starlight:5},{id:'deepseek',rarity:'4★',finish:1,first:false,upgrade:true,dust:6},{id:'deepseek',rarity:'4★',finish:2,first:false,upgrade:true,dust:6},{id:'already-pearl',title:'不该显示的三星名称',rarity:'3★',finish:3,first:false,converted:true,dust:2}]}));return;
   }
   if(fakeInsufficientExchange&&址.pathname==='/api/cards/exchange'){
     res.writeHead(200,{'content-type':'application/json'}).end(JSON.stringify({ok:false,say:'需要 20 星辉，目前只有 0 星辉。'}));return;
@@ -485,8 +488,12 @@ const 抽到=await 抽卡.execute({pool:'standard',count:1});
 报('保底可单独查询，抽卡返回更新后的保底与下一抽概率', 概率.ok && 概率.说.includes('还差 90 抽') && 抽到.ok && 抽到.pity.top>=89 && Object.hasOwn(抽到.rates,'top'));
 fakeDuplicateDraw=true;
 const 重复卡=await 抽卡.execute({pool:'standard',count:10});
-报('重复卡清楚区分品质升级、分解与新增收藏数量',重复卡.ok&&重复卡.说.includes('Kimi（5★） · 已拥有 · 珠光重复分解')&&重复卡.说.includes('DeepSeek（4★） · 已拥有 · 升至银箔')&&重复卡.说.includes('卡册 2/2，本次新收藏 0 张'),重复卡.说);
+报('旧房间结果也会合并满品质重复卡，同品种多次升级只报最终品质',重复卡.ok&&重复卡.说.includes('重复 4 张，其中 2 张已分解，获得 2 星尘、5 星辉')&&重复卡.说.includes('升级 1 张：DeepSeek·升至镀金')&&!重复卡.说.includes('银箔')&&!重复卡.说.includes('Kimi')&&!重复卡.说.includes('不该显示的三星名称'),重复卡.说);
 fakeDuplicateDraw=false;
+fakeOldRoomHundred=true;
+const 旧房间百连=await 抽卡.execute({pool:'standard',count:100});
+报('旧房间拒绝百连时只提示升级，不拆成多笔抽卡',!旧房间百连.ok&&旧房间百连.说.includes('房间更新到 0.1.4'),旧房间百连.说);
+fakeOldRoomHundred=false;
 const 工具名=name=>注册的工具.find(t=>t.name===name);
 const 看卡=工具名('fish_home_card');
 const 卡面=await 看卡.execute({card:'kimi-classic'});
@@ -528,13 +535,12 @@ const walletNow=await 鱼鱼窝工具.execute({what:'wallet'});
 报('钱包即时读取同一正式存档的结算结果，不用上次同步的金额',walletNow.ok&&drawn.coins===walletBeforeDraw.coins-1000&&walletNow.说.includes(drawn.coins+' 金币、'+drawn.cards.dust+' 星尘、'+drawn.cards.starlight+' 星辉'));
 const laterBuy=await 农活.execute({op:'buy',item:'radish',count:1});
 const afterLaterBuy=await 鱼鱼窝工具.execute({what:'wallet'});
-报('回执保留当时余额，后续查钱包反映之后的交易',laterBuy.ok&&afterLaterBuy.说.includes((drawn.coins-10)+' 金币')&&playerNotices[2].text.includes('结算后余额 '+drawn.coins+' 金币'));
+报('回执保留当时余额，后续查钱包反映之后的交易',laterBuy.ok&&afterLaterBuy.说.includes((drawn.coins-10)+' 金币')&&playerNotices[2].text.includes('结算后金币 '+drawn.coins+'。'));
 fakeInsufficientExchange=true;
 const denied=await 抽卡.execute({op:'exchange',kind:'card',item:'glm-classic'});
 fakeInsufficientExchange=false;
 报('兑换材料不足显示所需星辉和当前持有量',!denied.ok&&denied.说.includes('需要 20 星辉，目前只有 0 星辉'));
-const titles=drawn.results.filter(d=>d.id).map(d=>drawn.cards.catalog.find(c=>c.id===d.id)?.title);
-报('买种、批量播种和抽卡分别只发一条，抽卡通知列出卡名',bought.ok&&batch.ok&&drawn.ok&&playerNotices.length===3&&/^正式存档 \d{2}:\d{2}:\d{2}，/.test(playerNotices[0].text)&&playerNotices[0].text.includes('小鱿鱼买了 萝卜种子×2')&&playerNotices[1].text.includes('播种了 2 格萝卜')&&titles.every(title=>playerNotices[2].text.includes(title))&&await 等到(()=>收到的话.some(m=>m.content?.[0]?.text?.includes('小鱿鱼花了 1000 金币，抽了 10 张'))));
+报('买种、批量播种和抽卡分别只发一条，抽卡通知采用结算摘要',bought.ok&&batch.ok&&drawn.ok&&playerNotices.length===3&&/^正式存档 \d{2}:\d{2}:\d{2}，/.test(playerNotices[0].text)&&playerNotices[0].text.includes('小鱿鱼买了 萝卜种子×2')&&playerNotices[1].text.includes('播种了 2 格萝卜')&&playerNotices[2].text.includes(drawn.summary)&&await 等到(()=>收到的话.some(m=>m.content?.[0]?.text?.includes('小鱿鱼花了 1000 金币，抽了 10 张'))));
 farmAPI.bridge.publishLifeEvent=publishOriginal;
 const 卖价=await 鱼鱼窝工具.execute({what:'price'});
 const 明日行情=await 鱼鱼窝工具.execute({what:'market'});
@@ -845,6 +851,7 @@ await farmAPI.close();
 // Use a deterministic mature bed and two flowers. Both DSH tools go through the real HTTP API.
 const {createFarmState}=await import('file:///'+房间+'/../farm-state.js');
 const {cropTiming}=await import('file:///'+房间+'/../farm.js');
+const cardsCatalog=JSON.parse(fs.readFileSync(path.resolve(房间,'../card-catalog.json'),'utf8'));
 const 巨型存档 = new DatabaseSync(path.join(farmHome,'life.sqlite'));
 try {
   const state=JSON.parse(巨型存档.prepare("SELECT value FROM meta WHERE key='state'").get().value);
@@ -852,6 +859,8 @@ try {
   state.farm=createFarmState();
   state.bag.crops={};
   state.bag.giants={radish:1,tulip:1};
+  state.coins=45000;
+  state.cards.owned=Object.fromEntries(cardsCatalog.map(card=>[card.id,{finish:3,copies:['SP','hidden'].includes(card.rarity)?1:4}]));
   const 菜格=state.farm.plots.filter(plot=>/^bed-0-[0-2]-[0-2]$/.test(plot.id));
   const 花格=state.farm.plots.filter(plot=>plot.id==='flower-0');
   for (const [id,cropId,anchorPlotId,plots] of [
@@ -891,6 +900,23 @@ const 卖一朵=await 农活.execute({op:'sell',kind:'giant',item:'郁金香'});
 const 单卖完=farmAPI.store.farmSnapshot();
 报('指定巨型出售支持品种别名，库存不足回报准确余量',!超卖.ok&&超卖.说.includes('要卖 2 份巨型郁金香，背包只有 1 份')&&卖一朵.ok&&卖一朵.说.includes(`每份 ${巨型花价} 金币，背包还剩 0 份巨型郁金香`)&&单卖完.wallet.coins===收卖完.wallet.coins+巨型花价&&单卖完.wallet.giants.radish===1&&!单卖完.wallet.giants.tulip,超卖.说+' / '+卖一朵.说);
 打事件('turn/end',{turn:111,reason:{kind:'completed'}});
+const compactNotices=[];
+farmAPI.bridge.publishLifeEvent=async event=>{compactNotices.push(event);return 客户端.sendLifeEvent({schema:LIFE_EVENT_SCHEMA,...event});};
+for(const count of [10,100]){
+  const before=farmAPI.store.cardState();
+  const request={pool:'sp',count,requestId:'compact-player-'+count};
+  const drew=await roomPost('/api/cards/draw',request);
+  await roomPost('/api/cards/draw',request);
+  const gainDust=drew.cards.dust-before.dust,gainStar=drew.cards.starlight-before.starlight;
+  const breakdown=[gainDust&&`${gainDust} 星尘`,gainStar&&`${gainStar} 星辉`].filter(Boolean).join('、');
+  const expected=(count>=100?'大批量仅展示五星及以上。':'')+`重复 ${count} 张，分解获得 ${breakdown}。`;
+  const matches=compactNotices.filter(event=>event.id==='draw:'+request.requestId);
+  报(`网页 ${count} 连：只推一次短回执，分解数与货币实际入账一致`,drew.ok&&drew.results.length===count&&drew.cost===count*100&&drew.summary===expected&&matches.length===1&&matches[0].text.includes(expected)&&matches[0].text.length<150&&farmAPI.store.cardState().coins===before.coins-drew.cost,matches[0]?.text);
+}
+const 抽百前=farmAPI.store.cardState();
+const 工具百连=await 抽卡.execute({pool:'standard',count:100});
+const 抽百后=farmAPI.store.cardState();
+报('工具百连一次结算，满珠光只报分解，保留保底字段，不再推一遍通知',工具百连.ok&&工具百连.说.includes('抽了 100 张，花费 10000 金币')&&工具百连.说.includes('重复 100 张，分解获得')&&工具百连.说.length<200&&!工具百连.说.includes('undefined')&&工具百连.pity.top>0&&抽百后.coins===抽百前.coins-10000&&compactNotices.length===2,工具百连.说);
 await farmAPI.close();
 
 const oldDays=await 客户端.days();

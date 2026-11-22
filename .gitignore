@@ -5,3 +5,8 @@
 /*.tgz
 /.room-stage-*/
 /release-0.1.1/
+
+# 房间包和打包过程中的产物：一律不进仓库（一个 zip 就是 240 多 MB）
+/*.zip
+/.qa-smoke-*/
+/.room-*-qa-*/
